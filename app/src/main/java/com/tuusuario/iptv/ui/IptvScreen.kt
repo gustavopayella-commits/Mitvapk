@@ -87,6 +87,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -94,9 +95,13 @@ import com.tuusuario.iptv.data.AppSettingsEntity
 import com.tuusuario.iptv.data.ChannelEntity
 import com.tuusuario.iptv.data.EpgProgram
 import com.tuusuario.iptv.data.IptvDatabase
+import com.tuusuario.iptv.data.ServerEntity
+import com.tuusuario.iptv.data.RemoteSource
 import com.tuusuario.iptv.parser.M3uParser
 import com.tuusuario.iptv.parser.XmlTvParser
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun IptvScreen() {
@@ -123,6 +128,9 @@ fun IptvScreen() {
     var showAddListDialog by remember { mutableStateOf(false) }
     var showListsDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showServersDialog by remember { mutableStateOf(false) }
+    val savedServers by db.serverDao().observeServers().collectAsState(initial = emptyList())
+    var serverDiagnostic by remember { mutableStateOf("") }
 
     var isLoading by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
@@ -214,6 +222,55 @@ fun IptvScreen() {
         }
     }
 
+    fun syncServer(server: ServerEntity) {
+        scope.launch {
+            isLoading = true
+            statusMsg = "Sincronizando ${server.name}..."
+            serverDiagnostic = ""
+            try {
+                val result = withContext(Dispatchers.IO) { RemoteSource.fetch(server.url, server.format) }
+                serverDiagnostic = "${result.message}\nTipo: ${result.contentType}\nVista previa:\n${result.bodyPreview}"
+                if (result.channels.isEmpty()) {
+                    statusMsg = "Servidor respondió HTTP ${result.httpCode}, pero no se detectaron canales compatibles."
+                } else {
+                    val favorites = savedChannels.filter { it.isFavorite }.map { it.id }.toSet()
+                    val imported = result.channels.map { it.copy(isFavorite = it.id in favorites, serverId = server.id) }
+                    dao.deleteNonFavorites()
+                    dao.insertChannels(imported)
+                    playlistUrl = server.url
+                    dao.saveSettings(AppSettingsEntity(lastPlaylistUrl = server.url, lastEpgUrl = epgUrl))
+                    statusMsg = "${server.name}: ${imported.size} canales importados."
+                }
+            } catch (e: Exception) {
+                serverDiagnostic = "Error de conexión: ${e.message ?: e.javaClass.simpleName}"
+                statusMsg = "No se pudo sincronizar ${server.name}."
+            } finally { isLoading = false }
+        }
+    }
+
+    fun diagnoseServer(server: ServerEntity) {
+        scope.launch {
+            isLoading = true
+            serverDiagnostic = "Probando conexión..."
+            try {
+                val result = withContext(Dispatchers.IO) { RemoteSource.fetch(server.url, server.format) }
+                serverDiagnostic = "${result.message}\nTipo: ${result.contentType}\nVista previa:\n${result.bodyPreview}"
+                statusMsg = "Diagnóstico: HTTP ${result.httpCode}, ${result.channels.size} canales detectados."
+            } catch (e: Exception) {
+                serverDiagnostic = "Fallo: ${e.message ?: e.javaClass.simpleName}"
+                statusMsg = "No se pudo probar el servidor."
+            } finally { isLoading = false }
+        }
+    }
+
+    LaunchedEffect(savedChannels.isEmpty(), savedServers) {
+        if (savedChannels.isEmpty()) {
+            savedServers.firstOrNull { it.enabled }?.let { server ->
+                syncServer(server)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         val settings = dao.getSettings()
         if (settings != null) {
@@ -257,6 +314,25 @@ fun IptvScreen() {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             exoPlayer.release()
         }
+    }
+
+    DisposableEffect(exoPlayer) {
+        val playerListener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                statusMsg = when (playbackState) {
+                    Player.STATE_BUFFERING -> "Reproductor: cargando transmisión..."
+                    Player.STATE_READY -> "Reproductor: listo"
+                    Player.STATE_ENDED -> "Reproducción finalizada"
+                    Player.STATE_IDLE -> statusMsg
+                    else -> statusMsg
+                }
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                statusMsg = "Error de reproducción: ${error.errorCodeName}"
+            }
+        }
+        exoPlayer.addListener(playerListener)
+        onDispose { exoPlayer.removeListener(playerListener) }
     }
 
     LaunchedEffect(activeChannel?.url) {
@@ -382,6 +458,16 @@ fun IptvScreen() {
                     onClick = {
                         scope.launch { drawerState.close() }
                         showAddListDialog = true
+                    }
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Servidores remotos") },
+                    selected = false,
+                    icon = { Icon(Icons.Default.LiveTv, contentDescription = null) },
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        showServersDialog = true
                     }
                 )
 
@@ -695,6 +781,19 @@ fun IptvScreen() {
         }
     }
 
+    if (showServersDialog) {
+        ServerManagerDialog(
+            servers = savedServers,
+            diagnostic = serverDiagnostic,
+            onAdd = { name, url, format -> scope.launch { db.serverDao().insert(ServerEntity(name = name, url = url, format = format)); statusMsg = "Servidor agregado." } },
+            onToggle = { server, enabled -> scope.launch { db.serverDao().update(server.copy(enabled = enabled)) } },
+            onDelete = { server -> scope.launch { db.serverDao().delete(server.id) } },
+            onTest = { diagnoseServer(it) },
+            onSync = { syncServer(it) },
+            onClose = { showServersDialog = false }
+        )
+    }
+
     if (showAddListDialog) {
         AlertDialog(
             onDismissRequest = { showAddListDialog = false },
@@ -787,4 +886,65 @@ fun IptvScreen() {
             }
         )
     }
+}
+
+@Composable
+private fun ServerManagerDialog(
+    servers: List<ServerEntity>,
+    diagnostic: String,
+    onAdd: (String, String, String) -> Unit,
+    onToggle: (ServerEntity, Boolean) -> Unit,
+    onDelete: (ServerEntity) -> Unit,
+    onTest: (ServerEntity) -> Unit,
+    onSync: (ServerEntity) -> Unit,
+    onClose: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var format by remember { mutableStateOf("AUTO") }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Servidores remotos") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(520.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Nombre del servidor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(url, { url = it }, label = { Text("URL / endpoint") }, placeholder = { Text("https://servidor/lista.m3u") }, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("AUTO", "M3U", "JSON").forEach { option ->
+                        androidx.compose.material3.FilterChip(selected = format == option, onClick = { format = option }, label = { Text(option) })
+                    }
+                }
+                Button(onClick = { if (name.isNotBlank() && url.startsWith("http")) { onAdd(name.trim(), url.trim(), format); name = ""; url = "" } }, enabled = name.isNotBlank() && url.startsWith("http"), modifier = Modifier.fillMaxWidth()) { Text("Agregar servidor") }
+                Text("Guardados", fontWeight = FontWeight.Bold)
+                androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(servers, key = { it.id }) { server ->
+                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(server.name, fontWeight = FontWeight.Bold)
+                                Text(server.url, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Switch(checked = server.enabled, onCheckedChange = { onToggle(server, it) })
+                                    Text(if (server.enabled) "Activo" else "Desactivado")
+                                    Spacer(Modifier.weight(1f))
+                                    TextButton(onClick = { onTest(server) }) { Text("Probar") }
+                                    TextButton(onClick = { onSync(server) }) { Text("Importar") }
+                                    TextButton(onClick = { onDelete(server) }) { Text("Borrar") }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (diagnostic.isNotBlank()) {
+                    Text("Diagnóstico", fontWeight = FontWeight.Bold)
+                    Text(
+                        diagnostic,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 10,
+                        modifier = Modifier.height(100.dp).then(Modifier)
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } }
+    )
 }
