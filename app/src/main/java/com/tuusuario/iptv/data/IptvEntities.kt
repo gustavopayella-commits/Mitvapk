@@ -11,7 +11,8 @@ data class ChannelEntity(
     val groupName: String = "General",
     val tvgId: String? = null,
     val logo: String? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val serverId: Long? = null
 )
 
 @Entity(tableName = "settings")
