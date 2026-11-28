@@ -80,7 +80,7 @@ fun IptvScreen() {
 
     var playlistUrl by remember { mutableStateOf("") }
     var epgUrl by remember { mutableStateOf("") }
-    val epgPrograms = remember { mutableStateOf>(emptyMap()) }
+    val epgPrograms = remember { mutableStateOf(emptyMap<String, EpgProgram>()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
