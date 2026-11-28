@@ -431,8 +431,9 @@ fun IptvScreen() {
                 .fillMaxSize()
                 .statusBarsPadding(),
             topBar = {
+                @OptIn(ExperimentalMaterial3Api::class)
                 TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
+                    colors = @OptIn(ExperimentalMaterial3Api::class) TopAppBarDefaults.topAppBarColors(
                         containerColor = headerBlue,
                         titleContentColor = Color.White,
                         navigationIconContentColor = Color.White,
