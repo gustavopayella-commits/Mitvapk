@@ -92,31 +92,42 @@ import androidx.media3.ui.PlayerView
 import com.tuusuario.iptv.data.AppSettingsEntity
 import com.tuusuario.iptv.data.ChannelEntity
 import com.tuusuario.iptv.data.EpgProgram
-import com.tuusuario.iptv.data.IptvDao
 import com.tuusuario.iptv.data.IptvDatabase
 import com.tuusuario.iptv.parser.M3uParser
 import com.tuusuario.iptv.parser.XmlTvParser
 import kotlinx.coroutines.launch
 
-private suspend fun syncPlaylistAndEpg(
-    dao: IptvDao,
-    savedChannels: List<ChannelEntity>,
-    m3u: String,
-    epg: String,
-    onResult: (String) -> Unit,
-    onEpgLoaded: (Map<String, EpgProgram>) -> Unit
-) {
-    try {
-        val cleanM3u = m3u.trim()
-        val cleanEpg = epg.trim()
-        val parsed = M3uParser.fromUrl(cleanM3u)
-        if (parsed.isEmpty()) {
-            onResult("Lista vacía o sin canales válidos.")
-        } else {
-            val favIds = savedChannels.filter { it.isFavorite }.map { it.id }.toSet()
-            val merged = parsed.map { ch -> ch.copy(isFavorite = ch.id in favIds) }
-            dao.deleteNonFavorites()
-            dao.insertChannels(merged)
-            dao.saveSettings(
-                AppSettingsEntity(
-                    
+@Composable
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
+fun IptvScreen() {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    val db = remember { IptvDatabase.getInstance(context) }
+    val dao = remember { db.iptvDao() }
+
+    val savedChannels by dao.observeChannels().collectAsState(initial = emptyList())
+
+    var playlistUrl by remember { mutableStateOf("") }
+    var epgUrl by remember { mutableStateOf("") }
+    val epgPrograms = remember { mutableStateOf(emptyMap<String, EpgProgram>()) }
+
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf("TODOS") }
+    var onlyFavorites by remember { mutableStateOf(false) }
+    var darkTheme by remember { mutableStateOf(true) }
+
+    var showAddListDialog by remember { mutableStateOf(false) }
+    var showListsDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    var activeChannel by remember { mutableStateOf<ChannelEntity?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
+
+    val headerBlue = Color(0xFF0277BD)
+    val darkHeaderBlue = Color(0xFF01579B
