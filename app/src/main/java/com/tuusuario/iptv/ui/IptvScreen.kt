@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class, UnstableApi::class)
+
 package com.tuusuario.iptv.ui
 
 import android.app.Activity
@@ -5,7 +7,6 @@ import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
-import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -98,7 +99,6 @@ import com.tuusuario.iptv.parser.XmlTvParser
 import kotlinx.coroutines.launch
 
 @Composable
-@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 fun IptvScreen() {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -431,9 +431,8 @@ fun IptvScreen() {
                 .fillMaxSize()
                 .statusBarsPadding(),
             topBar = {
-                @OptIn(ExperimentalMaterial3Api::class)
                 TopAppBar(
-                    colors = @OptIn(ExperimentalMaterial3Api::class) TopAppBarDefaults.topAppBarColors(
+                    colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = headerBlue,
                         titleContentColor = Color.White,
                         navigationIconContentColor = Color.White,
