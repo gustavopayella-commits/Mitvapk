@@ -7,13 +7,44 @@ import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,7 +59,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.tuusuario.iptv.data.*
+import com.tuusuario.iptv.data.AppSettingsEntity
+import com.tuusuario.iptv.data.ChannelEntity
+import com.tuusuario.iptv.data.EpgProgram
+import com.tuusuario.iptv.data.IptvDatabase
 import com.tuusuario.iptv.parser.M3uParser
 import com.tuusuario.iptv.parser.XmlTvParser
 import kotlinx.coroutines.launch
@@ -46,7 +80,7 @@ fun IptvScreen() {
 
     var playlistUrl by remember { mutableStateOf("") }
     var epgUrl by remember { mutableStateOf("") }
-    val epgMapState = remember { mutableStateOf>(emptyMap()) }
+    val epgPrograms = remember { mutableStateOf>(emptyMap()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
@@ -65,7 +99,8 @@ fun IptvScreen() {
         )
     }
 
-    val displayedList = if (savedChannels.isNotEmpty()) savedChannels else demoChannels
+    val displayedList: List<ChannelEntity> =
+        if (savedChannels.isNotEmpty()) savedChannels else demoChannels
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -74,11 +109,14 @@ fun IptvScreen() {
     }
 
     LaunchedEffect(Unit) {
-        dao.getSettings()?.let { settings ->
+        val settings = dao.getSettings()
+        if (settings != null) {
             playlistUrl = settings.lastPlaylistUrl
             epgUrl = settings.lastEpgUrl
             if (settings.lastEpgUrl.isNotBlank()) {
-                runCatching { epgMapState.value = XmlTvParser.fetchCurrentPrograms(settings.lastEpgUrl) }
+                runCatching {
+                    epgPrograms.value = XmlTvParser.fetchCurrentPrograms(settings.lastEpgUrl)
+                }
             }
         }
     }
@@ -118,11 +156,11 @@ fun IptvScreen() {
         }
     }
 
-    val filteredChannels = remember(displayedList, searchQuery) {
+    val filteredChannels: List<ChannelEntity> = remember(displayedList, searchQuery) {
         if (searchQuery.isBlank()) displayedList
-        else displayedList.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-                it.groupName.contains(searchQuery, ignoreCase = true)
+        else displayedList.filter { ch ->
+            ch.name.contains(searchQuery, ignoreCase = true) ||
+                ch.groupName.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -147,7 +185,10 @@ fun IptvScreen() {
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
             ) {
-                Icon(Icons.Default.FullscreenExit, contentDescription = "Salir de pantalla completa")
+                Icon(
+                    imageVector = Icons.Default.FullscreenExit,
+                    contentDescription = "Salir de pantalla completa"
+                )
             }
         }
         return
@@ -181,7 +222,7 @@ fun IptvScreen() {
                     modifier = Modifier.fillMaxSize()
                 )
                 activeChannel?.let { ch ->
-                    val currentProg = ch.tvgId?.let { epgMapState.value[it]?.title }
+                    val prog: EpgProgram? = ch.tvgId?.let { id -> epgPrograms.value[id] }
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -195,9 +236,9 @@ fun IptvScreen() {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (!currentProg.isNullOrBlank()) {
+                        if (prog != null && prog.title.isNotBlank()) {
                             Text(
-                                text = "Ahora: $currentProg",
+                                text = "Ahora: ${prog.title}",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -211,7 +252,10 @@ fun IptvScreen() {
                         .align(Alignment.TopEnd)
                         .padding(6.dp)
                 ) {
-                    Icon(Icons.Default.Fullscreen, contentDescription = "Pantalla completa")
+                    Icon(
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "Pantalla completa"
+                    )
                 }
             }
         }
@@ -243,8 +287,13 @@ fun IptvScreen() {
                             if (parsed.isEmpty()) {
                                 statusMsg = "Lista vacía o sin canales válidos."
                             } else {
-                                val favIds = savedChannels.filter { it.isFavorite }.map { it.id }.toSet()
-                                val merged = parsed.map { it.copy(isFavorite = it.id in favIds) }
+                                val favIds = savedChannels
+                                    .filter { it.isFavorite }
+                                    .map { it.id }
+                                    .toSet()
+                                val merged = parsed.map { ch ->
+                                    ch.copy(isFavorite = ch.id in favIds)
+                                }
                                 dao.deleteNonFavorites()
                                 dao.insertChannels(merged)
                                 dao.saveSettings(
@@ -254,7 +303,8 @@ fun IptvScreen() {
                                     )
                                 )
                                 if (cleanEpg.isNotBlank()) {
-                                    epgMapState.value = XmlTvParser.fetchCurrentPrograms(cleanEpg)
+                                    epgPrograms.value =
+                                        XmlTvParser.fetchCurrentPrograms(cleanEpg)
                                 }
                                 activeChannel = merged.first()
                                 statusMsg = "Guardados ${merged.size} canales en Room."
@@ -281,9 +331,10 @@ fun IptvScreen() {
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (statusMsg != null) {
+        val currentStatus = statusMsg
+        if (currentStatus != null) {
             Text(
-                text = statusMsg!!,
+                text = currentStatus,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp)
@@ -309,7 +360,7 @@ fun IptvScreen() {
         ) {
             items(filteredChannels, key = { it.id }) { channel ->
                 val isSelected = activeChannel?.id == channel.id
-                val nowProgram = channel.tvgId?.let { epgMapState.value[it]?.title }
+                val nowProg: EpgProgram? = channel.tvgId?.let { id -> epgPrograms.value[id] }
 
                 Card(
                     modifier = Modifier
@@ -337,12 +388,13 @@ fun IptvScreen() {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val subtitle = if (nowProg != null && nowProg.title.isNotBlank()) {
+                                "${channel.groupName} • ${nowProg.title}"
+                            } else {
+                                channel.groupName
+                            }
                             Text(
-                                text = if (!nowProgram.isNullOrBlank()) {
-                                    "${channel.groupName} • $nowProgram"
-                                } else {
-                                    channel.groupName
-                                },
+                                text = subtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -355,7 +407,11 @@ fun IptvScreen() {
                             }
                         }) {
                             Icon(
-                                imageVector = if (channel.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                imageVector = if (channel.isFavorite) {
+                                    Icons.Default.Favorite
+                                } else {
+                                    Icons.Default.FavoriteBorder
+                                },
                                 contentDescription = "Favorito"
                             )
                         }
