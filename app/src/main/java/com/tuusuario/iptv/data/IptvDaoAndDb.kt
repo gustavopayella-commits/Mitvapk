@@ -14,6 +14,8 @@ interface IptvDao {
     suspend fun insertChannels(channels: List<ChannelEntity>)
     @Query("DELETE FROM channels WHERE isFavorite = 0")
     suspend fun deleteNonFavorites()
+    @Query("DELETE FROM channels")
+    suspend fun deleteAllChannels()
     @Query("UPDATE channels SET isFavorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
     @Query("SELECT * FROM settings WHERE id = 1")
