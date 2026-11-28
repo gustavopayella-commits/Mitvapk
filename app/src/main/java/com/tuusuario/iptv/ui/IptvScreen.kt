@@ -13,15 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +46,7 @@ fun IptvScreen() {
 
     var playlistUrl by remember { mutableStateOf("") }
     var epgUrl by remember { mutableStateOf("") }
-    var epgMap by remember { mutableStateOf>(emptyMap()) }
+    val epgMapState = remember { mutableStateOf>(emptyMap()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
@@ -86,7 +78,7 @@ fun IptvScreen() {
             playlistUrl = settings.lastPlaylistUrl
             epgUrl = settings.lastEpgUrl
             if (settings.lastEpgUrl.isNotBlank()) {
-                runCatching { epgMap = XmlTvParser.fetchCurrentPrograms(settings.lastEpgUrl) }
+                runCatching { epgMapState.value = XmlTvParser.fetchCurrentPrograms(settings.lastEpgUrl) }
             }
         }
     }
@@ -189,7 +181,7 @@ fun IptvScreen() {
                     modifier = Modifier.fillMaxSize()
                 )
                 activeChannel?.let { ch ->
-                    val currentProg: String? = ch.tvgId?.let { epgMap[it]?.title }
+                    val currentProg = ch.tvgId?.let { epgMapState.value[it]?.title }
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -262,7 +254,7 @@ fun IptvScreen() {
                                     )
                                 )
                                 if (cleanEpg.isNotBlank()) {
-                                    epgMap = XmlTvParser.fetchCurrentPrograms(cleanEpg)
+                                    epgMapState.value = XmlTvParser.fetchCurrentPrograms(cleanEpg)
                                 }
                                 activeChannel = merged.first()
                                 statusMsg = "Guardados ${merged.size} canales en Room."
@@ -317,7 +309,7 @@ fun IptvScreen() {
         ) {
             items(filteredChannels, key = { it.id }) { channel ->
                 val isSelected = activeChannel?.id == channel.id
-                val nowProgram: String? = channel.tvgId?.let { epgMap[it]?.title }
+                val nowProgram = channel.tvgId?.let { epgMapState.value[it]?.title }
 
                 Card(
                     modifier = Modifier
