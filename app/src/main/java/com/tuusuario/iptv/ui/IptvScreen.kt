@@ -13,7 +13,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -181,7 +189,7 @@ fun IptvScreen() {
                     modifier = Modifier.fillMaxSize()
                 )
                 activeChannel?.let { ch ->
-                    val currentProg = ch.tvgId?.let { epgMap[it]?.title }
+                    val currentProg: String? = ch.tvgId?.let { epgMap[it]?.title }
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -309,7 +317,7 @@ fun IptvScreen() {
         ) {
             items(filteredChannels, key = { it.id }) { channel ->
                 val isSelected = activeChannel?.id == channel.id
-                val nowProgram = channel.tvgId?.let { epgMap[it]?.title }
+                val nowProgram: String? = channel.tvgId?.let { epgMap[it]?.title }
 
                 Card(
                     modifier = Modifier
