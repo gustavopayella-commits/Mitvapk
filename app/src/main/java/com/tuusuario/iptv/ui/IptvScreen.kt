@@ -112,6 +112,7 @@ fun IptvScreen() {
 
     val db = remember { IptvDatabase.getInstance(context) }
     val dao = remember { db.iptvDao() }
+    val autoSyncPrefs = remember { context.getSharedPreferences("iptv_auto_sync", android.content.Context.MODE_PRIVATE) }
 
     val savedChannels by dao.observeChannels().collectAsState(initial = emptyList())
 
@@ -140,27 +141,7 @@ fun IptvScreen() {
     val headerBlue = Color(0xFF0277BD)
     val darkHeaderBlue = Color(0xFF01579B)
 
-    val demoChannels = remember {
-        listOf(
-            ChannelEntity(
-                id = "demo-hls",
-                name = "Big Buck Bunny HLS",
-                url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-                groupName = "CANALES HD",
-                tvgId = "bbb.demo"
-            ),
-            ChannelEntity(
-                id = "demo-dash",
-                name = "Tears of Steel Demo",
-                url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-                groupName = "CINE Y SERIES",
-                tvgId = "tos.demo"
-            )
-        )
-    }
-
-    val baseChannels: List<ChannelEntity> =
-        if (savedChannels.isNotEmpty()) savedChannels else demoChannels
+    val baseChannels: List<ChannelEntity> = savedChannels
 
     val categories: List<String> = remember(baseChannels) {
         val dynamicGroups = baseChannels
@@ -184,6 +165,7 @@ fun IptvScreen() {
     }
 
     fun triggerSync(m3u: String, epg: String) {
+        autoSyncPrefs.edit().putBoolean("user_cleared_list", false).apply()
         scope.launch {
             isLoading = true
             statusMsg = null
@@ -223,6 +205,7 @@ fun IptvScreen() {
     }
 
     fun syncServer(server: ServerEntity) {
+        autoSyncPrefs.edit().putBoolean("user_cleared_list", false).apply()
         scope.launch {
             isLoading = true
             statusMsg = "Sincronizando ${server.name}..."
@@ -264,7 +247,8 @@ fun IptvScreen() {
     }
 
     LaunchedEffect(savedChannels.isEmpty(), savedServers) {
-        if (savedChannels.isEmpty()) {
+        val autoSyncBlocked = autoSyncPrefs.getBoolean("user_cleared_list", false)
+        if (savedChannels.isEmpty() && !autoSyncBlocked) {
             savedServers.firstOrNull { it.enabled }?.let { server ->
                 syncServer(server)
             }
@@ -868,7 +852,8 @@ fun IptvScreen() {
                     onClick = {
                         showDeleteDialog = false
                         scope.launch {
-                            dao.deleteNonFavorites()
+                            dao.deleteAllChannels()
+                            autoSyncPrefs.edit().putBoolean("user_cleared_list", true).apply()
                             playlistUrl = ""
                             epgUrl = ""
                             dao.saveSettings(AppSettingsEntity(lastPlaylistUrl = "", lastEpgUrl = ""))
