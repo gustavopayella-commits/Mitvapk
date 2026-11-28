@@ -1,0 +1,2 @@
+-keep class com.tuusuario.iptv.data.** { *; }
+-dontwarn org.xmlpull.v1.**
